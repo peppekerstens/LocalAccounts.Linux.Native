@@ -2,18 +2,32 @@
 // Licensed under the MIT License.
 
 using System.Diagnostics;
-using System.Globalization;
+using System.Runtime.InteropServices;
 
 namespace Microsoft.PowerShell.Commands
 {
     /// <summary>
-    /// Internal helpers for invoking Linux account management tools
-    /// (getent, passwd, chage, useradd, usermod, userdel, groupadd, groupmod, groupdel, gpasswd, chpasswd).
+    /// Helpers for LocalAccounts cmdlets on Linux.
+    ///
+    /// READ operations use P/Invoke libc calls (getpwent/getpwnam/getgrent/
+    /// getgrnam/getspnam) — no subprocess spawning required.
+    ///
+    /// WRITE operations (create/modify/delete users and groups) use
+    /// Process.Start to invoke the standard shadow-utils tools (useradd,
+    /// usermod, userdel, groupadd, groupmod, groupdel, gpasswd, chpasswd).
+    /// No POSIX syscall equivalent exists for these mutations.
     /// </summary>
     internal static class AccountHelpers
     {
         // ------------------------------------------------------------------ //
-        //  Process execution                                                  //
+        //  Lock for non-reentrant getent family functions                     //
+        // ------------------------------------------------------------------ //
+
+        private static readonly object s_pwLock = new();
+        private static readonly object s_grLock = new();
+
+        // ------------------------------------------------------------------ //
+        //  Process execution (write operations only)                          //
         // ------------------------------------------------------------------ //
 
         internal static (int ExitCode, string Stdout, string Stderr) Run(
@@ -35,7 +49,6 @@ namespace Microsoft.PowerShell.Commands
             return (proc.ExitCode, stdout, stderr);
         }
 
-        /// <summary>Run a command with stdin piped from <paramref name="stdin"/>.</summary>
         internal static (int ExitCode, string Stdout, string Stderr) RunWithStdin(
             string stdin, string executable, params string[] args)
         {
@@ -59,76 +72,112 @@ namespace Microsoft.PowerShell.Commands
         }
 
         // ------------------------------------------------------------------ //
-        //  getent helpers                                                     //
+        //  User read operations — P/Invoke libc                              //
         // ------------------------------------------------------------------ //
 
         /// <summary>
-        /// Returns all passwd entries as parsed <see cref="LocalUser"/> objects.
+        /// Enumerate all users from the passwd database (honouring nsswitch.conf).
+        /// Uses getpwent() — no subprocess.
         /// </summary>
         internal static IEnumerable<LocalUser> GetAllUsers()
         {
-            var (_, stdout, _) = Run("getent", "passwd");
-            foreach (var line in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            var users = new List<LocalUser>();
+
+            lock (s_pwLock)
             {
-                var user = ParsePasswdLine(line);
-                if (user is not null)
-                    yield return user;
-            }
-        }
-
-        internal static LocalUser? GetUser(string name)
-        {
-            var (exit, stdout, _) = Run("getent", "passwd", name);
-            if (exit != 0 || string.IsNullOrWhiteSpace(stdout)) return null;
-            return ParsePasswdLine(stdout.Trim());
-        }
-
-        private static LocalUser? ParsePasswdLine(string line)
-        {
-            var f = line.Split(':');
-            if (f.Length < 7) return null;
-
-            if (!int.TryParse(f[2], out int uid)) return null;
-            if (!int.TryParse(f[3], out int gid)) return null;
-
-            string gecos    = f[4];
-            string fullName = gecos.Split(',')[0];
-
-            // password status
-            bool enabled          = true;
-            bool passwordRequired = true;
-            var (_, pstat, _) = Run("passwd", "-S", f[0]);
-            if (!string.IsNullOrEmpty(pstat))
-            {
-                var parts = pstat.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length >= 2)
+                NativeInterop.SetPwEnt();
+                try
                 {
-                    if (parts[1] is "L" or "LK") enabled          = false;
-                    if (parts[1] == "NP")         passwordRequired = false;
+                    IntPtr ptr;
+                    while ((ptr = NativeInterop.GetPwEnt()) != IntPtr.Zero)
+                    {
+                        var pw = NativeInterop.MarshalPasswd(ptr);
+                        if (pw is null) continue;
+                        var user = BuildLocalUser(pw.Value);
+                        if (user is not null)
+                            users.Add(user);
+                    }
+                }
+                finally
+                {
+                    NativeInterop.EndPwEnt();
                 }
             }
 
-            // chage
+            return users;
+        }
+
+        /// <summary>
+        /// Look up a single user by name using getpwnam().
+        /// Returns null if not found.
+        /// </summary>
+        internal static LocalUser? GetUser(string name)
+        {
+            lock (s_pwLock)
+            {
+                var ptr = NativeInterop.GetPwNam(name);
+                if (ptr == IntPtr.Zero) return null;
+                var pw = NativeInterop.MarshalPasswd(ptr);
+                return pw is null ? null : BuildLocalUser(pw.Value);
+            }
+        }
+
+        private static LocalUser? BuildLocalUser(NativeInterop.Passwd pw)
+        {
+            string username = NativeInterop.PtrToString(pw.pw_name);
+            if (string.IsNullOrEmpty(username)) return null;
+
+            string gecos    = NativeInterop.PtrToString(pw.pw_gecos);
+            string fullName = gecos.Split(',')[0];
+
+            // Default: assume enabled, password required
+            bool enabled          = true;
+            bool passwordRequired = true;
             DateTime? passwordExpires        = null;
             DateTime? passwordLastSet        = null;
-            DateTime? accountExpires         = null;
             DateTime? passwordChangeableDate = null;
+            DateTime? accountExpires         = null;
 
-            var (_, chage, _) = Run("chage", "-l", f[0]);
-            foreach (var cl in chage.Split('\n'))
+            // Read shadow entry — requires root; silently degrades if unavailable
+            var spPtr = NativeInterop.GetSpNam(username);
+            if (spPtr != IntPtr.Zero)
             {
-                TryParseChageDate(cl, "Password expires", ref passwordExpires);
-                TryParseChageDate(cl, "Last password change", ref passwordLastSet);
-                TryParseChageDate(cl, "Account expires", ref accountExpires);
+                var sp = NativeInterop.MarshalSpwd(spPtr);
+                if (sp.HasValue)
+                {
+                    string pwdp = NativeInterop.PtrToString(sp.Value.sp_pwdp);
+
+                    // Locked: password hash starts with '!'
+                    // No-password: empty hash or "!!"
+                    if (pwdp.StartsWith('!') && pwdp.Length > 1 && pwdp[1] != '!')
+                        enabled = false;
+                    if (string.IsNullOrEmpty(pwdp) || pwdp == "!!" || pwdp == "!")
+                        passwordRequired = false;
+
+                    passwordLastSet        = NativeInterop.ShadowDaysToDate(sp.Value.sp_lstchg);
+                    accountExpires         = NativeInterop.ShadowDaysToDate(sp.Value.sp_expire);
+
+                    // Password expires: lastChange + max. If max is 99999 → never.
+                    if (sp.Value.sp_max > 0 && sp.Value.sp_max < 99999 && sp.Value.sp_lstchg > 0)
+                        passwordExpires = NativeInterop.ShadowDaysToDate(
+                            sp.Value.sp_lstchg + sp.Value.sp_max);
+
+                    // Earliest date user may change password: lastChange + min
+                    if (sp.Value.sp_min > 0 && sp.Value.sp_lstchg > 0)
+                        passwordChangeableDate = NativeInterop.ShadowDaysToDate(
+                            sp.Value.sp_lstchg + sp.Value.sp_min);
+                }
             }
 
             return new LocalUser
             {
-                Name                   = f[0],
+                Name                   = username,
                 FullName               = fullName,
                 Description            = gecos,
                 Enabled                = enabled,
                 SID                    = null,
+                ObjectClass            = "User",
+                PrincipalSource        = "Local",
                 PasswordRequired       = passwordRequired,
                 UserMayChangePassword  = true,
                 PasswordExpires        = passwordExpires,
@@ -136,95 +185,148 @@ namespace Microsoft.PowerShell.Commands
                 PasswordChangeableDate = passwordChangeableDate,
                 AccountExpires         = accountExpires,
                 LastLogon              = null,
-                HomeDirectory          = f[5],
-                Shell                  = f[6],
-                UID                    = uid,
-                GID                    = gid,
+                HomeDirectory          = NativeInterop.PtrToString(pw.pw_dir),
+                Shell                  = NativeInterop.PtrToString(pw.pw_shell),
+                UID                    = (int)pw.pw_uid,
+                GID                    = (int)pw.pw_gid,
             };
         }
 
-        private static void TryParseChageDate(string line, string label, ref DateTime? target)
-        {
-            var idx = line.IndexOf(label, StringComparison.OrdinalIgnoreCase);
-            if (idx < 0) return;
-            var colon = line.IndexOf(':', idx + label.Length);
-            if (colon < 0) return;
-            var val = line[(colon + 1)..].Trim();
-            if (val is "never" or "password must be changed") return;
-            if (DateTime.TryParse(val, CultureInfo.InvariantCulture,
-                    DateTimeStyles.None, out var dt))
-                target = dt;
-        }
-
         // ------------------------------------------------------------------ //
-        //  getent group helpers                                               //
+        //  Group read operations — P/Invoke libc                             //
         // ------------------------------------------------------------------ //
 
+        /// <summary>
+        /// Enumerate all groups from the group database using getgrent().
+        /// No subprocess.
+        /// </summary>
         internal static IEnumerable<LocalGroup> GetAllGroups()
         {
-            var (_, stdout, _) = Run("getent", "group");
-            foreach (var line in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            var groups = new List<LocalGroup>();
+
+            lock (s_grLock)
             {
-                var g = ParseGroupLine(line);
-                if (g is not null) yield return g;
+                NativeInterop.SetGrEnt();
+                try
+                {
+                    IntPtr ptr;
+                    while ((ptr = NativeInterop.GetGrEnt()) != IntPtr.Zero)
+                    {
+                        var g = NativeInterop.MarshalGroup(ptr);
+                        if (g is null) continue;
+                        var grp = BuildLocalGroup(g.Value);
+                        if (grp is not null) groups.Add(grp);
+                    }
+                }
+                finally
+                {
+                    NativeInterop.EndGrEnt();
+                }
+            }
+
+            return groups;
+        }
+
+        /// <summary>
+        /// Look up a single group by name using getgrnam().
+        /// Returns null if not found.
+        /// </summary>
+        internal static LocalGroup? GetGroup(string name)
+        {
+            lock (s_grLock)
+            {
+                var ptr = NativeInterop.GetGrNam(name);
+                if (ptr == IntPtr.Zero) return null;
+                var g = NativeInterop.MarshalGroup(ptr);
+                return g is null ? null : BuildLocalGroup(g.Value);
             }
         }
 
-        internal static LocalGroup? GetGroup(string name)
+        private static LocalGroup? BuildLocalGroup(NativeInterop.Group g)
         {
-            var (exit, stdout, _) = Run("getent", "group", name);
-            if (exit != 0 || string.IsNullOrWhiteSpace(stdout)) return null;
-            return ParseGroupLine(stdout.Trim());
-        }
+            string name = NativeInterop.PtrToString(g.gr_name);
+            if (string.IsNullOrEmpty(name)) return null;
 
-        private static LocalGroup? ParseGroupLine(string line)
-        {
-            var f = line.Split(':');
-            if (f.Length < 4) return null;
-            if (!int.TryParse(f[2], out int gid)) return null;
             return new LocalGroup
             {
-                Name            = f[0],
+                Name            = name,
                 Description     = string.Empty,
                 SID             = null,
                 ObjectClass     = "Group",
                 PrincipalSource = "Local",
-                GID             = gid,
+                GID             = (int)g.gr_gid,
             };
         }
 
+        // ------------------------------------------------------------------ //
+        //  Group member resolution — P/Invoke libc                           //
+        // ------------------------------------------------------------------ //
+
+        /// <summary>
+        /// Get all members of a group: explicit members (gr_mem) plus users
+        /// whose primary GID matches this group, resolved via getpwent().
+        /// No subprocess.
+        /// </summary>
         internal static IEnumerable<LocalPrincipal> GetGroupMembers(string groupName)
         {
-            var (exit, stdout, _) = Run("getent", "group", groupName);
-            if (exit != 0 || string.IsNullOrWhiteSpace(stdout))
-                yield break;
+            LocalGroup? grp = GetGroup(groupName);
+            if (grp is null) yield break;
 
-            var f = stdout.Trim().Split(':');
-            if (f.Length < 4 || !int.TryParse(f[2], out int gid))
-                yield break;
+            int targetGid = grp.GID;
 
+            // Get explicit members from gr_mem
             var members = new HashSet<string>(StringComparer.Ordinal);
 
-            // explicit members in field[3]
-            if (!string.IsNullOrEmpty(f[3]))
-                foreach (var m in f[3].Split(',', StringSplitOptions.RemoveEmptyEntries))
-                    members.Add(m);
-
-            // primary group members
-            var (_, pstdout, _) = Run("getent", "passwd");
-            foreach (var line in pstdout.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            lock (s_grLock)
             {
-                var pf = line.Split(':');
-                if (pf.Length >= 4 && int.TryParse(pf[3], out int pgid) && pgid == gid)
-                    members.Add(pf[0]);
+                var ptr = NativeInterop.GetGrNam(groupName);
+                if (ptr != IntPtr.Zero)
+                {
+                    var g = NativeInterop.MarshalGroup(ptr);
+                    if (g.HasValue)
+                    {
+                        foreach (var m in NativeInterop.PtrToStringArray(g.Value.gr_mem))
+                            if (!string.IsNullOrEmpty(m)) members.Add(m);
+                    }
+                }
+            }
+
+            // Add users whose primary GID matches (primary group members)
+            lock (s_pwLock)
+            {
+                NativeInterop.SetPwEnt();
+                try
+                {
+                    IntPtr ptr;
+                    while ((ptr = NativeInterop.GetPwEnt()) != IntPtr.Zero)
+                    {
+                        var pw = NativeInterop.MarshalPasswd(ptr);
+                        if (pw is null) continue;
+                        if ((int)pw.Value.pw_gid == targetGid)
+                        {
+                            string uname = NativeInterop.PtrToString(pw.Value.pw_name);
+                            if (!string.IsNullOrEmpty(uname)) members.Add(uname);
+                        }
+                    }
+                }
+                finally
+                {
+                    NativeInterop.EndPwEnt();
+                }
             }
 
             foreach (var m in members.OrderBy(x => x))
-                yield return new LocalPrincipal { Name = m, ObjectClass = "User", PrincipalSource = "Local" };
+                yield return new LocalPrincipal
+                {
+                    Name            = m,
+                    ObjectClass     = "User",
+                    PrincipalSource = "Local",
+                    SID             = null,
+                };
         }
 
         // ------------------------------------------------------------------ //
-        //  Password helper                                                    //
+        //  Password write helper                                              //
         // ------------------------------------------------------------------ //
 
         internal static void SetPassword(string username, System.Security.SecureString password)
