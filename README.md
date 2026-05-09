@@ -1,47 +1,132 @@
 # LocalAccounts.Linux.Native
 
-A native C# PowerShell binary module implementing the `*-LocalUser`, `*-LocalGroup`, and `*-LocalGroupMember` cmdlets for Linux, as a direct port of the [`PowerShell.LocalAccounts.Linux`](https://github.com/peppekerstens/PowerShell.LocalAccounts.Linux) PowerShell script module (Stage 1/Stage 3).
+[![Pester Tests](https://github.com/peppekerstens/LocalAccounts.Linux.Native/actions/workflows/pester.yml/badge.svg)](https://github.com/peppekerstens/LocalAccounts.Linux.Native/actions/workflows/pester.yml)
 
-This is Stage 5 (Tier 2) of the [PowerShell Linux Commands](https://peppekerstens.github.io) project.
+> Native C# binary module implementing the full 15-cmdlet `*-LocalUser`, `*-LocalGroup`, and `*-LocalGroupMember` surface of `Microsoft.PowerShell.LocalAccounts` for Linux.
 
-## Cmdlets
+This is the Tier 2 (C# native) successor to [`PowerShell.LocalAccounts.Linux`](https://github.com/peppekerstens/PowerShell.LocalAccounts.Linux), part of Stage 5 of the [PowerShell Linux Commands](https://peppekerstens.github.io) project.
 
-| Cmdlet | Tool | Notes |
+---
+
+## What it does
+
+Provides all 15 cmdlets from `Microsoft.PowerShell.LocalAccounts` as a compiled binary module. Read operations (`Get-*`) use P/Invoke directly into `libc` (`getpwent`, `getgrent`, `getspnam`) — zero subprocesses for enumeration. Write operations use the standard Linux user management tools.
+
+| Cmdlet | Backend | Notes |
 |---|---|---|
-| `Get-LocalUser` | `getent passwd`, `passwd -S`, `chage -l` | Wildcard-filtered; matches Windows output shape |
-| `New-LocalUser` | `useradd`, `chpasswd`, `passwd -d`, `usermod -L` | |
-| `Set-LocalUser` | `usermod`, `chpasswd`, `chage` | |
-| `Remove-LocalUser` | `userdel` | `-RemoveHome` flag |
-| `Enable-LocalUser` | `usermod -U` | |
-| `Disable-LocalUser` | `usermod -L` | |
-| `Rename-LocalUser` | `usermod -l` | Optional `-MoveHome` |
-| `Get-LocalGroup` | `getent group` | Wildcard-filtered |
-| `New-LocalGroup` | `groupadd` | |
-| `Set-LocalGroup` | validates via `getent group` | Description field no-op on Linux |
-| `Remove-LocalGroup` | `groupdel` | |
-| `Rename-LocalGroup` | `groupmod -n` | |
-| `Get-LocalGroupMember` | `getent group`, `getent passwd` | Includes primary group members |
-| `Add-LocalGroupMember` | `usermod -aG` | |
-| `Remove-LocalGroupMember` | `gpasswd -d` | |
+| `Get-LocalUser` | P/Invoke `getpwent` / `getspnam` | Full object: UID, shell, home, enabled state, expiry |
+| `Get-LocalGroup` | P/Invoke `getgrent` | Includes GID and member list |
+| `Get-LocalGroupMember` | P/Invoke `getpwent` + `getgrent` | Includes primary-group members |
+| `New-LocalUser` | `useradd`, `chpasswd`, `usermod` | SupportsShouldProcess |
+| `New-LocalGroup` | `groupadd` | SupportsShouldProcess |
+| `Set-LocalUser` | `usermod`, `chage`, `chpasswd` | SupportsShouldProcess |
+| `Set-LocalGroup` | `getent group` (validate only) | No-op — Linux groups have no description field; warns |
+| `Enable-LocalUser` | `usermod -U` | Unlocks password hash |
+| `Disable-LocalUser` | `chpasswd` + `usermod -L` | Sets locked hash first for passwordless accounts |
+| `Remove-LocalUser` | `userdel` | `-RemoveHome` to also delete home directory |
+| `Remove-LocalGroup` | `groupdel` | SupportsShouldProcess |
+| `Add-LocalGroupMember` | `usermod -aG` | SupportsShouldProcess |
+| `Remove-LocalGroupMember` | `gpasswd -d` | SupportsShouldProcess |
+| `Rename-LocalUser` | `usermod -l` | `-MoveHome` to also rename home directory |
+| `Rename-LocalGroup` | `groupmod -n` | SupportsShouldProcess |
 
-## Build
+All write cmdlets support `-WhatIf` and `-Confirm`.
+
+---
+
+## Requirements
+
+- Linux only
+- PowerShell 7.4+, .NET 8
+- Standard Linux utilities: `useradd`, `usermod`, `userdel`, `groupadd`, `groupmod`, `groupdel`, `gpasswd`, `chpasswd`, `chage`
+- Most write operations require root or `sudo`
+
+---
+
+## Installation
 
 ```powershell
-dotnet build src/LocalAccounts.Linux.Native/LocalAccounts.Linux.Native.csproj
+git clone https://github.com/peppekerstens/LocalAccounts.Linux.Native
+dotnet build LocalAccounts.Linux.Native/src/LocalAccounts.Linux.Native --configuration Release
+Import-Module ./LocalAccounts.Linux.Native/src/LocalAccounts.Linux.Native/bin/Release/net8.0/LocalAccounts.Linux.Native.dll
 ```
 
-## Test (WSL2 / Linux)
+---
+
+## Usage
+
+```powershell
+# List all users
+Get-LocalUser
+
+# Find locked accounts
+Get-LocalUser | Where-Object { -not $_.Enabled }
+
+# Show group membership
+Get-LocalGroupMember -Group sudo
+
+# Create a new user
+New-LocalUser -Name alice -FullName 'Alice Smith' -Password (Read-Host -AsSecureString)
+
+# Add user to group
+Add-LocalGroupMember -Group sudo -Member alice
+
+# Disable an account
+Disable-LocalUser -Name alice
+
+# Remove a user and their home directory
+Remove-LocalUser -Name alice -RemoveHome
+```
+
+---
+
+## CI / Testing
+
+Tested across 5 Linux distributions in containers on every push:
+
+| Distro | Image |
+|---|---|
+| Ubuntu 24.04 | `ghcr.io/peppekerstens/pwsh-pester-ubuntu:24.04` |
+| Debian 12 | `ghcr.io/peppekerstens/pwsh-pester-debian:12` |
+| Fedora 40 | `ghcr.io/peppekerstens/pwsh-pester-fedora:40` |
+| openSUSE Tumbleweed | `ghcr.io/peppekerstens/pwsh-pester-opensuse:tumbleweed` |
+| Arch Linux | `ghcr.io/peppekerstens/pwsh-pester-arch:latest` |
+
+Run locally (requires Docker):
 
 ```powershell
 Invoke-Pester -Path tests/LocalAccounts.Linux.Native.Tests/ -Output Detailed
 ```
 
-## Requirements
+---
 
-- Linux only (uses `getent`, `useradd`, `usermod`, `userdel`, `groupadd`, `groupmod`, `groupdel`, `gpasswd`, `chpasswd`, `passwd`, `chage`)
-- Most write operations require root or sudo
-- PowerShell 7.4+, .NET 8
+## Implementation Notes
 
-## Output type compatibility
+- **P/Invoke reads**: `getpwent`/`getgrent` enumerate passwd/group entries directly via libc — no `getent` subprocess needed.
+- **`getspnam` degrades gracefully for non-root callers**: shadow password fields default to safe values; `Enabled` defaults to `$true` with a warning.
+- **`Disable-LocalUser` on passwordless accounts**: `usermod -L` exits 6 if there is no password hash to lock. The module sets a locked hash via `chpasswd` first, then locks.
+- **Type compatibility**: Output objects (`LocalUser`, `LocalGroup`, `LocalPrincipal`) live in the `Microsoft.PowerShell.Commands` namespace, matching the Windows module's type names for script compatibility.
+- **SIDs**: Linux has no SIDs. All SID properties return `$null`.
+- **Primary-group membership**: `Get-LocalGroupMember` includes users whose primary GID matches the group, not just those listed explicitly in `/etc/group`.
 
-Output objects (`LocalUser`, `LocalGroup`, `LocalPrincipal`) are defined as real C# classes in the `Microsoft.PowerShell.Commands` namespace, matching the Windows `Microsoft.PowerShell.LocalAccounts` module's type names for script compatibility.
+---
+
+## Version history
+
+| Version | Changes |
+|---|---|
+| 0.1.0 | Initial release. All 15 cmdlets. P/Invoke reads via libc. 116 Pester tests. |
+
+---
+
+## Related
+
+- [`PowerShell.LocalAccounts.Linux`](https://github.com/peppekerstens/PowerShell.LocalAccounts.Linux) — the Stage 1 PowerShell script wrapper this module replaces
+- [opencode project plan](https://github.com/peppekerstens/opencode) — multi-stage project tracking
+- [Blog series](https://peppekerstens.github.io) — write-up of the full journey
+
+---
+
+## License
+
+[GNU General Public License v3](LICENSE)
