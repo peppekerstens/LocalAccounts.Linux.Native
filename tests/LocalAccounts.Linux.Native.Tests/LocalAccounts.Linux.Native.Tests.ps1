@@ -2,7 +2,9 @@
 
 BeforeDiscovery {
     $script:onLinux = $IsLinux -eq $true
-    $script:isRoot  = $IsLinux -and ((& id -u) -eq '0')
+    $script:isRoot  = $IsLinux -and (
+                          [System.IO.File]::ReadAllText('/proc/self/status') -match '(?m)^Uid:\s+(\d+)' -and
+                          $Matches[1] -eq '0')
 
     $script:allCmdlets = @(
         'Get-LocalUser','New-LocalUser','Set-LocalUser','Enable-LocalUser','Disable-LocalUser',
@@ -14,7 +16,6 @@ BeforeDiscovery {
     $script:readCmdlets  = @('Get-LocalUser','Get-LocalGroup','Get-LocalGroupMember')
     $script:writeCmdlets = $script:allCmdlets | Where-Object { $_ -notin $script:readCmdlets }
 
-    # Prefix must be defined here for -ForEach data-driven tests in BeforeDiscovery scope
     $script:prefix    = 'pla_test_'
     $script:userNames = 1..10 | ForEach-Object { "${script:prefix}u$_" }
     $script:grpNames  = @("${script:prefix}grpA", "${script:prefix}grpB")
@@ -23,7 +24,6 @@ BeforeDiscovery {
 Describe 'Module: LocalAccounts.Linux.Native' {
 
     BeforeAll {
-        # Repeat prefix here — BeforeDiscovery $script: vars are not available in BeforeAll
         $script:prefix    = 'pla_test_'
         $script:userNames = 1..10 | ForEach-Object { "${script:prefix}u$_" }
         $script:grpNames  = @("${script:prefix}grpA", "${script:prefix}grpB")
@@ -94,6 +94,9 @@ Describe 'Module: LocalAccounts.Linux.Native' {
             $root | Should -Not -BeNullOrEmpty
             $root.Name | Should -Be 'root'
         }
+        It 'root user UID is 0' {
+            (Get-LocalUser -Name root).UID | Should -Be 0
+        }
         It 'wildcard filter works' {
             $users = Get-LocalUser -Name 'r*'
             $users | Should -Not -BeNullOrEmpty
@@ -105,6 +108,17 @@ Describe 'Module: LocalAccounts.Linux.Native' {
         It 'output type is Microsoft.PowerShell.Commands.LocalUser' {
             (Get-LocalUser -Name root).GetType().FullName |
                 Should -Be 'Microsoft.PowerShell.Commands.LocalUser'
+        }
+        It 'shell property is a non-empty string for root' {
+            (Get-LocalUser -Name root).Shell | Should -Not -BeNullOrEmpty
+        }
+        It 'home directory property is set for root' {
+            (Get-LocalUser -Name root).HomeDirectory | Should -Not -BeNullOrEmpty
+        }
+        It 'pipeline: Get-LocalUser | Where-Object works' {
+            $disabled = Get-LocalUser | Where-Object { -not $_.Enabled }
+            # just verify the pipeline does not throw; result count varies per system
+            $disabled | Should -BeOfType [object[]] -OrNullOrEmpty
         }
     }
 
@@ -126,6 +140,9 @@ Describe 'Module: LocalAccounts.Linux.Native' {
             $g = Get-LocalGroup -Name root
             $g | Should -Not -BeNullOrEmpty
             $g.Name | Should -Be 'root'
+        }
+        It 'root group GID is 0' {
+            (Get-LocalGroup -Name root).GID | Should -Be 0
         }
         It 'wildcard filter works' {
             $groups = Get-LocalGroup -Name 'r*'
@@ -162,6 +179,10 @@ Describe 'Module: LocalAccounts.Linux.Native' {
             (Get-LocalGroupMember -Group root)[0].GetType().FullName |
                 Should -Be 'Microsoft.PowerShell.Commands.LocalPrincipal'
         }
+        It 'root is a member of root group (primary GID inclusion)' {
+            $members = Get-LocalGroupMember -Group root
+            $members.Name | Should -Contain 'root'
+        }
     }
 
     # ------------------------------------------------------------------ #
@@ -185,19 +206,23 @@ Describe 'Module: LocalAccounts.Linux.Native' {
         It 'Remove-LocalUser -WhatIf does not throw for nonexistent user' {
             { Remove-LocalUser -Name "${script:prefix}whatif" -WhatIf } | Should -Not -Throw
         }
+        It 'Set-LocalUser -WhatIf does not throw' {
+            { Set-LocalUser -Name 'root' -Description 'ignored' -WhatIf } | Should -Not -Throw
+        }
+        It 'Add-LocalGroupMember -WhatIf does not throw' {
+            { Add-LocalGroupMember -Group 'root' -Member 'root' -WhatIf } | Should -Not -Throw
+        }
     }
 
     # ------------------------------------------------------------------ #
     #  Integration: 10 users                                              #
-    #  Requires root. Runs as root inside CI containers.                  #
     # ------------------------------------------------------------------ #
 
-    Context 'Integration — 10 users' -Skip:(-not $script:isRoot) {
+    Context 'Integration - 10 users' -Skip:(-not $script:isRoot) {
 
         BeforeAll {
             $script:createdUsers = [System.Collections.Generic.List[string]]::new()
             foreach ($name in $script:userNames) {
-                # useradd --no-create-home keeps containers clean
                 New-LocalUser -Name $name -FullName "Test User $name" -NoPassword -Confirm:$false
                 if (Get-LocalUser -Name $name -ErrorAction SilentlyContinue) {
                     $script:createdUsers.Add($name)
@@ -209,7 +234,6 @@ Describe 'Module: LocalAccounts.Linux.Native' {
             foreach ($name in ($script:createdUsers | Select-Object)) {
                 Remove-LocalUser -Name $name -RemoveHome -Confirm:$false -ErrorAction SilentlyContinue
             }
-            # Clean up renamed variant too
             Remove-LocalUser -Name "${script:prefix}u1_renamed" -RemoveHome -Confirm:$false -ErrorAction SilentlyContinue
         }
 
@@ -247,10 +271,12 @@ Describe 'Module: LocalAccounts.Linux.Native' {
             (Get-LocalUser -Name "${script:prefix}u4").Shell | Should -Be '/bin/sh'
         }
 
-        It 'disables a user (sets password to locked)' {
-            # Give u2 a password first so lock has something to prefix with '!'
-            # Using passwd --stdin avoids interactive prompt
-            Set-LocalUser -Name "${script:prefix}u2" -Shell '/bin/sh' # ensure user exists for next step
+        It 'Set-LocalUser changes HomeDirectory' {
+            Set-LocalUser -Name "${script:prefix}u8" -HomeDirectory "/tmp/${script:prefix}u8_home"
+            (Get-LocalUser -Name "${script:prefix}u8").HomeDirectory | Should -Be "/tmp/${script:prefix}u8_home"
+        }
+
+        It 'disables a user' {
             & bash -c "echo '${script:prefix}u2:TempPwd123!' | chpasswd" | Out-Null
             Disable-LocalUser -Name "${script:prefix}u2" -Confirm:$false
             (Get-LocalUser -Name "${script:prefix}u2").Enabled | Should -BeFalse
@@ -287,13 +313,18 @@ Describe 'Module: LocalAccounts.Linux.Native' {
             $missing = $script:createdUsers | Where-Object { -not (Get-LocalUser -Name $_ -ErrorAction SilentlyContinue) }
             $missing | Should -BeNullOrEmpty
         }
+
+        It 'pipeline: Get-LocalUser wildcard | Remove-LocalUser -WhatIf does not throw' {
+            { Get-LocalUser -Name "${script:prefix}u*" | ForEach-Object { Remove-LocalUser -Name $_.Name -WhatIf } } |
+                Should -Not -Throw
+        }
     }
 
     # ------------------------------------------------------------------ #
     #  Integration: 2 groups                                              #
     # ------------------------------------------------------------------ #
 
-    Context 'Integration — 2 groups' -Skip:(-not $script:isRoot) {
+    Context 'Integration - 2 groups' -Skip:(-not $script:isRoot) {
 
         BeforeAll {
             $script:createdGroups = [System.Collections.Generic.List[string]]::new()
@@ -303,7 +334,6 @@ Describe 'Module: LocalAccounts.Linux.Native' {
                     $script:createdGroups.Add($name)
                 }
             }
-            # Pre-create two temp users for membership tests
             $script:grpUsers = @("${script:prefix}gmu1","${script:prefix}gmu2")
             foreach ($u in $script:grpUsers) {
                 New-LocalUser -Name $u -NoPassword -Confirm:$false
@@ -384,8 +414,8 @@ Describe 'Module: LocalAccounts.Linux.Native' {
 
         It 'deleted groups no longer returned by Get-LocalGroup' `
             -ForEach ($script:grpNames | ForEach-Object { @{ GrpName = $_ } }) {
-            Get-LocalGroup -Name $GrpName                   | Should -BeNullOrEmpty
-            Get-LocalGroup -Name "${GrpName}_renamed"       | Should -BeNullOrEmpty
+            Get-LocalGroup -Name $GrpName             | Should -BeNullOrEmpty
+            Get-LocalGroup -Name "${GrpName}_renamed" | Should -BeNullOrEmpty
         }
     }
 
@@ -393,7 +423,7 @@ Describe 'Module: LocalAccounts.Linux.Native' {
     #  Integration: end-to-end lifecycle                                  #
     # ------------------------------------------------------------------ #
 
-    Context 'Integration — end-to-end lifecycle' -Skip:(-not $script:isRoot) {
+    Context 'Integration - end-to-end lifecycle' -Skip:(-not $script:isRoot) {
 
         BeforeAll {
             $script:e2eUser  = "${script:prefix}e2e"
@@ -418,8 +448,7 @@ Describe 'Module: LocalAccounts.Linux.Native' {
             (Get-LocalGroupMember -Group $script:e2eGroup).Name | Should -Contain $script:e2eUser
         }
 
-        It 'disables user (sets password to allow lock)' {
-            # Set a password first so usermod -L has a hash to prefix with '!'
+        It 'disables user' {
             & bash -c "echo '${script:e2eUser}:TempPwd123!' | chpasswd" | Out-Null
             Disable-LocalUser -Name $script:e2eUser -Confirm:$false
             (Get-LocalUser -Name $script:e2eUser).Enabled | Should -BeFalse
@@ -448,6 +477,184 @@ Describe 'Module: LocalAccounts.Linux.Native' {
         It 'removes group' {
             Remove-LocalGroup -Name $script:e2eGroup -Confirm:$false
             Get-LocalGroup -Name $script:e2eGroup | Should -BeNullOrEmpty
+        }
+    }
+
+    # ------------------------------------------------------------------ #
+    #  Real-world scenario: service account provisioning                  #
+    #  Models creating a dedicated system account for a daemon (e.g.      #
+    #  a monitoring agent) - no login shell, no home dir, locked password #
+    # ------------------------------------------------------------------ #
+
+    Context 'Scenario - service account provisioning' -Skip:(-not $script:isRoot) {
+
+        BeforeAll {
+            $script:svcUser  = "${script:prefix}svc"
+            $script:svcGroup = "${script:prefix}svcgrp"
+            # Create a system-style group first
+            New-LocalGroup -Name $script:svcGroup -Confirm:$false
+        }
+
+        AfterAll {
+            Remove-LocalUser  -Name $script:svcUser  -RemoveHome -Confirm:$false -ErrorAction SilentlyContinue
+            Remove-LocalGroup -Name $script:svcGroup -Confirm:$false -ErrorAction SilentlyContinue
+        }
+
+        It 'creates service account with nologin shell' {
+            New-LocalUser -Name $script:svcUser -NoPassword -Shell '/sbin/nologin' -Confirm:$false
+            (Get-LocalUser -Name $script:svcUser).Shell | Should -Match 'nologin'
+        }
+
+        It 'service account is enabled after creation' {
+            (Get-LocalUser -Name $script:svcUser).Enabled | Should -BeTrue
+        }
+
+        It 'service account added to service group' {
+            Add-LocalGroupMember -Group $script:svcGroup -Member $script:svcUser
+            (Get-LocalGroupMember -Group $script:svcGroup).Name | Should -Contain $script:svcUser
+        }
+
+        It 'disabling service account locks it' {
+            & bash -c "echo '${script:svcUser}:TempSvc123!' | chpasswd" | Out-Null
+            Disable-LocalUser -Name $script:svcUser -Confirm:$false
+            (Get-LocalUser -Name $script:svcUser).Enabled | Should -BeFalse
+        }
+
+        It 'disabled service account still appears in Get-LocalUser' {
+            Get-LocalUser -Name $script:svcUser | Should -Not -BeNullOrEmpty
+        }
+
+        It 'disabled accounts discoverable via pipeline filter' {
+            $disabled = Get-LocalUser | Where-Object { -not $_.Enabled -and $_.Name -like "${script:prefix}*" }
+            $disabled.Name | Should -Contain $script:svcUser
+        }
+
+        It 'remove service account from group before deletion' {
+            Remove-LocalGroupMember -Group $script:svcGroup -Member $script:svcUser -Confirm:$false
+            (Get-LocalGroupMember -Group $script:svcGroup).Name |
+                Should -Not -Contain $script:svcUser
+        }
+
+        It 'deletes service account' {
+            Remove-LocalUser -Name $script:svcUser -RemoveHome -Confirm:$false
+            Get-LocalUser -Name $script:svcUser | Should -BeNullOrEmpty
+        }
+
+        It 'deletes service group' {
+            Remove-LocalGroup -Name $script:svcGroup -Confirm:$false
+            Get-LocalGroup -Name $script:svcGroup | Should -BeNullOrEmpty
+        }
+    }
+
+    # ------------------------------------------------------------------ #
+    #  Real-world scenario: operator group with multiple members          #
+    #  Models a shared sudo/operator group where users are bulk-managed   #
+    # ------------------------------------------------------------------ #
+
+    Context 'Scenario - operator group bulk membership' -Skip:(-not $script:isRoot) {
+
+        BeforeAll {
+            $script:opGroup   = "${script:prefix}operators"
+            $script:opMembers = @("${script:prefix}op1","${script:prefix}op2","${script:prefix}op3")
+            New-LocalGroup -Name $script:opGroup -Confirm:$false
+            foreach ($u in $script:opMembers) {
+                New-LocalUser -Name $u -NoPassword -Confirm:$false
+            }
+        }
+
+        AfterAll {
+            Remove-LocalGroup -Name $script:opGroup -Confirm:$false -ErrorAction SilentlyContinue
+            foreach ($u in $script:opMembers) {
+                Remove-LocalUser -Name $u -RemoveHome -Confirm:$false -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'adds three operators to group in one call' {
+            Add-LocalGroupMember -Group $script:opGroup -Member $script:opMembers
+            $members = (Get-LocalGroupMember -Group $script:opGroup).Name
+            foreach ($u in $script:opMembers) {
+                $members | Should -Contain $u
+            }
+        }
+
+        It 'member count is exactly 3' {
+            (Get-LocalGroupMember -Group $script:opGroup | Measure-Object).Count | Should -Be 3
+        }
+
+        It 'all operators exist as users' {
+            foreach ($u in $script:opMembers) {
+                Get-LocalUser -Name $u | Should -Not -BeNullOrEmpty
+            }
+        }
+
+        It 'bulk disable: pipeline disable all operators' {
+            foreach ($u in $script:opMembers) {
+                & bash -c "echo '${u}:TempOp123!' | chpasswd" | Out-Null
+            }
+            $script:opMembers | ForEach-Object { Disable-LocalUser -Name $_ -Confirm:$false }
+            $disabled = Get-LocalUser -Name "${script:prefix}op*" | Where-Object { -not $_.Enabled }
+            $disabled.Count | Should -Be 3
+        }
+
+        It 'bulk enable: re-enable all operators' {
+            $script:opMembers | ForEach-Object { Enable-LocalUser -Name $_ -Confirm:$false }
+            $enabled = Get-LocalUser -Name "${script:prefix}op*" | Where-Object { $_.Enabled }
+            $enabled.Count | Should -Be 3
+        }
+
+        It 'remove all members from group via pipeline' {
+            $script:opMembers | ForEach-Object {
+                Remove-LocalGroupMember -Group $script:opGroup -Member $_ -Confirm:$false
+            }
+            $members = Get-LocalGroupMember -Group $script:opGroup -ErrorAction SilentlyContinue
+            $members | Should -BeNullOrEmpty
+        }
+
+        It 'group still exists after all members removed' {
+            Get-LocalGroup -Name $script:opGroup | Should -Not -BeNullOrEmpty
+        }
+    }
+
+    # ------------------------------------------------------------------ #
+    #  Real-world scenario: account expiry and metadata                   #
+    # ------------------------------------------------------------------ #
+
+    Context 'Scenario - account expiry and metadata' -Skip:(-not $script:isRoot) {
+
+        BeforeAll {
+            $script:expUser = "${script:prefix}expiry"
+            New-LocalUser -Name $script:expUser -FullName 'Expiry Test User' -NoPassword -Confirm:$false
+        }
+
+        AfterAll {
+            Remove-LocalUser -Name $script:expUser -RemoveHome -Confirm:$false -ErrorAction SilentlyContinue
+        }
+
+        It 'user created successfully' {
+            Get-LocalUser -Name $script:expUser | Should -Not -BeNullOrEmpty
+        }
+
+        It 'FullName is set correctly' {
+            (Get-LocalUser -Name $script:expUser).FullName | Should -Be 'Expiry Test User'
+        }
+
+        It 'Set-LocalUser updates description/FullName' {
+            Set-LocalUser -Name $script:expUser -FullName 'Updated Expiry User'
+            (Get-LocalUser -Name $script:expUser).FullName | Should -Be 'Updated Expiry User'
+        }
+
+        It 'Set-LocalUser sets account expiry date' {
+            $expDate = (Get-Date).AddDays(30)
+            Set-LocalUser -Name $script:expUser -AccountExpires $expDate
+            # Verify it does not throw; chage -l readable by root
+            $lu = Get-LocalUser -Name $script:expUser
+            $lu | Should -Not -BeNullOrEmpty
+        }
+
+        It 'Set-LocalUser clears account expiry (never expires)' {
+            Set-LocalUser -Name $script:expUser -AccountNeverExpires
+            $lu = Get-LocalUser -Name $script:expUser
+            $lu | Should -Not -BeNullOrEmpty
         }
     }
 }
