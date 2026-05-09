@@ -116,9 +116,8 @@ Describe 'Module: LocalAccounts.Linux.Native' {
             (Get-LocalUser -Name root).HomeDirectory | Should -Not -BeNullOrEmpty
         }
         It 'pipeline: Get-LocalUser | Where-Object works' {
-            $disabled = Get-LocalUser | Where-Object { -not $_.Enabled }
             # just verify the pipeline does not throw; result count varies per system
-            $disabled | Should -BeOfType [object[]] -OrNullOrEmpty
+            { Get-LocalUser | Where-Object { -not $_.Enabled } | Out-Null } | Should -Not -Throw
         }
     }
 
