@@ -86,11 +86,11 @@ Tested across 5 Linux distributions in containers on every push:
 
 | Distro | Image |
 |---|---|
-| Ubuntu 22.04 | `peppekerstens/testinfra:ubuntu2204` |
-| Ubuntu 24.04 | `peppekerstens/testinfra:ubuntu2404` |
-| Debian 12 | `peppekerstens/testinfra:debian12` |
-| Fedora 41 | `peppekerstens/testinfra:fedora41` |
-| openSUSE Tumbleweed | `peppekerstens/testinfra:opensuse-tumbleweed` |
+| Ubuntu 24.04 | `ghcr.io/peppekerstens/pwsh-pester-ubuntu:24.04` |
+| Debian 12 | `ghcr.io/peppekerstens/pwsh-pester-debian:12` |
+| Fedora 40 | `ghcr.io/peppekerstens/pwsh-pester-fedora:40` |
+| openSUSE Tumbleweed | `ghcr.io/peppekerstens/pwsh-pester-opensuse:tumbleweed` |
+| Arch Linux | `ghcr.io/peppekerstens/pwsh-pester-arch:latest` |
 
 ### Test scenarios
 
@@ -132,7 +132,7 @@ Invoke-Pester -Path tests/LocalAccounts.Linux.Native.Tests/ -Output Detailed
 | Version | Changes |
 |---|---|
 | 0.1.0 | Initial release. All 15 cmdlets. P/Invoke reads via libc. 116 Pester tests. |
-| 0.2.0 | Test expansion. Service account scenario (nologin shell, lock, remove); operator bulk membership (pipeline disable/enable/remove); account expiry (`Set-LocalUser -AccountExpires/-AccountNeverExpires`); primary-group edge case (`root` in `root` group). ~140+ tests. |
+| 0.2.0 | Test expansion. Service account scenario (nologin shell, lock, remove); operator bulk membership (pipeline disable/enable/remove); account expiry (`Set-LocalUser -AccountExpires/-AccountNeverExpires`); primary-group edge case (`root` in `root` group). 147 tests. |
 
 ---
 
