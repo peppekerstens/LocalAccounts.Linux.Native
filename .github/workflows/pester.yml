@@ -1,0 +1,53 @@
+name: Pester Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pester-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: ubuntu-24.04
+            image: ghcr.io/peppekerstens/pwsh-pester-ubuntu:24.04
+          - distro: debian-12
+            image: ghcr.io/peppekerstens/pwsh-pester-debian:12
+          - distro: fedora-40
+            image: ghcr.io/peppekerstens/pwsh-pester-fedora:40
+          - distro: opensuse-tumbleweed
+            image: ghcr.io/peppekerstens/pwsh-pester-opensuse:tumbleweed
+          - distro: archlinux
+            image: ghcr.io/peppekerstens/pwsh-pester-arch:latest
+    container:
+      image: ${{ matrix.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --cap-add=NET_RAW
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build (Release)
+        run: dotnet build src/LocalAccounts.Linux.Native/LocalAccounts.Linux.Native.csproj --configuration Release
+      - name: Run Pester
+        run: |
+          pwsh -NoProfile -Command "
+            Invoke-Pester \
+              -Path 'tests/LocalAccounts.Linux.Native.Tests/LocalAccounts.Linux.Native.Tests.ps1' \
+              -OutputFormat NUnitXml \
+              -OutputFile results.xml \
+              -Output Detailed
+          "
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pester-${{ matrix.distro }}-results
+          path: results.xml

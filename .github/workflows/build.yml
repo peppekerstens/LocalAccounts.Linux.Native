@@ -1,0 +1,26 @@
+name: Build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore
+        run: dotnet restore src/LocalAccounts.Linux.Native/LocalAccounts.Linux.Native.csproj
+      - name: Build (Release)
+        run: dotnet build src/LocalAccounts.Linux.Native/LocalAccounts.Linux.Native.csproj --configuration Release --no-restore
+      - name: Upload DLL artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LocalAccounts.Linux.Native
+          path: src/LocalAccounts.Linux.Native/bin/Release/net8.0/LocalAccounts.Linux.Native.dll
