@@ -86,11 +86,27 @@ Tested across 5 Linux distributions in containers on every push:
 
 | Distro | Image |
 |---|---|
-| Ubuntu 24.04 | `ghcr.io/peppekerstens/pwsh-pester-ubuntu:24.04` |
-| Debian 12 | `ghcr.io/peppekerstens/pwsh-pester-debian:12` |
-| Fedora 40 | `ghcr.io/peppekerstens/pwsh-pester-fedora:40` |
-| openSUSE Tumbleweed | `ghcr.io/peppekerstens/pwsh-pester-opensuse:tumbleweed` |
-| Arch Linux | `ghcr.io/peppekerstens/pwsh-pester-arch:latest` |
+| Ubuntu 22.04 | `peppekerstens/testinfra:ubuntu2204` |
+| Ubuntu 24.04 | `peppekerstens/testinfra:ubuntu2404` |
+| Debian 12 | `peppekerstens/testinfra:debian12` |
+| Fedora 41 | `peppekerstens/testinfra:fedora41` |
+| openSUSE Tumbleweed | `peppekerstens/testinfra:opensuse-tumbleweed` |
+
+### Test scenarios
+
+| Describe block | Scope | Tests |
+|---|---|---|
+| Module surface | everywhere | 15 cmdlet export checks |
+| Get-LocalUser read ops | Linux (any user) | Enumerate, filter by name, wildcard, nonexistent |
+| Get-LocalGroup read ops | Linux (any user) | Enumerate, filter, nonexistent |
+| Get-LocalGroupMember read ops | Linux (any user) | Returns members; primary-group edge case (root in root) |
+| WhatIf safety | everywhere | All write cmdlets with -WhatIf |
+| 10-user write lifecycle | Linux + root | New/Set/Rename/Disable/Enable/Remove ×10 |
+| 2-group write lifecycle | Linux + root | New/Rename/Add-Member/Remove-Member/Remove ×2 |
+| E2E lifecycle | Linux + root | Full user+group create → modify → membership → remove cycle |
+| Service account scenario | Linux + root | Create with nologin shell; lock; primary-group membership; remove |
+| Operator bulk membership | Linux + root | Bulk Add-LocalGroupMember; bulk Disable/Enable/Remove via pipeline |
+| Account expiry scenario | Linux + root | Set-LocalUser -AccountExpires; -AccountNeverExpires |
 
 Run locally (requires Docker):
 
@@ -116,6 +132,7 @@ Invoke-Pester -Path tests/LocalAccounts.Linux.Native.Tests/ -Output Detailed
 | Version | Changes |
 |---|---|
 | 0.1.0 | Initial release. All 15 cmdlets. P/Invoke reads via libc. 116 Pester tests. |
+| 0.2.0 | Test expansion. Service account scenario (nologin shell, lock, remove); operator bulk membership (pipeline disable/enable/remove); account expiry (`Set-LocalUser -AccountExpires/-AccountNeverExpires`); primary-group edge case (`root` in `root` group). ~140+ tests. |
 
 ---
 
