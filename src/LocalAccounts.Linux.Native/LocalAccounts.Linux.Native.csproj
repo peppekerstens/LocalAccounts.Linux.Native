@@ -9,6 +9,14 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Deterministic>true</Deterministic>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <PackageId>LocalAccounts.Linux.Native</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>peppekerstens</Authors>
+    <Description>Linux Local Accounts module providing Windows-compatible user and group management cmdlets via P/Invoke libc.</Description>
+    <PackageTags>PowerShell;Linux;pwsh;Module;LocalAccounts</PackageTags>
+    <PackageProjectUrl>https://github.com/peppekerstens/LocalAccounts.Linux.Native</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/peppekerstens/LocalAccounts.Linux.Native</RepositoryUrl>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="System.Management.Automation" Version="7.4.6" />
