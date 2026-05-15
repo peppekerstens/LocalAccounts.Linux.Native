@@ -65,7 +65,7 @@ namespace Microsoft.PowerShell.Commands
             {
                 WriteError(new ErrorRecord(
                     new InvalidOperationException($"useradd failed (exit {exit}): {stderr.Trim()}"),
-                    "UseraaddFailed", ErrorCategory.InvalidOperation, Name));
+                    "UserAddFailed", ErrorCategory.InvalidOperation, Name));
                 return;
             }
 

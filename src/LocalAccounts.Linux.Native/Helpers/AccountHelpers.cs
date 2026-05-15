@@ -43,10 +43,14 @@ namespace Microsoft.PowerShell.Commands
                 psi.ArgumentList.Add(a);
 
             using var proc = Process.Start(psi)!;
-            string stdout = proc.StandardOutput.ReadToEnd();
-            string stderr = proc.StandardError.ReadToEnd();
+            // Read stdout and stderr concurrently to avoid deadlock when either
+            // pipe buffer fills. Safe: cmdlets run on thread-pool threads with
+            // no SynchronizationContext.
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+            var stderrTask = proc.StandardError.ReadToEndAsync();
+            System.Threading.Tasks.Task.WaitAll(stdoutTask, stderrTask);
             proc.WaitForExit();
-            return (proc.ExitCode, stdout, stderr);
+            return (proc.ExitCode, stdoutTask.Result, stderrTask.Result);
         }
 
         internal static (int ExitCode, string Stdout, string Stderr) RunWithStdin(
@@ -65,10 +69,14 @@ namespace Microsoft.PowerShell.Commands
             using var proc = Process.Start(psi)!;
             proc.StandardInput.WriteLine(stdin);
             proc.StandardInput.Close();
-            string stdout = proc.StandardOutput.ReadToEnd();
-            string stderr = proc.StandardError.ReadToEnd();
+            // Read stdout and stderr concurrently to avoid deadlock when either
+            // pipe buffer fills. Safe: cmdlets run on thread-pool threads with
+            // no SynchronizationContext.
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+            var stderrTask = proc.StandardError.ReadToEndAsync();
+            System.Threading.Tasks.Task.WaitAll(stdoutTask, stderrTask);
             proc.WaitForExit();
-            return (proc.ExitCode, stdout, stderr);
+            return (proc.ExitCode, stdoutTask.Result, stderrTask.Result);
         }
 
         // ------------------------------------------------------------------ //
