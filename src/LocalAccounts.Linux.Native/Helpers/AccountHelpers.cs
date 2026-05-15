@@ -79,6 +79,17 @@ namespace Microsoft.PowerShell.Commands
             return (proc.ExitCode, stdoutTask.Result, stderrTask.Result);
         }
 
+        /// <summary>
+        /// Checks if a subprocess failure is due to insufficient privileges.
+        /// Returns true when stderr contains "Permission denied" or exit code is 4 (useradd/groupadd permission denied).
+        /// </summary>
+        internal static bool IsPermissionDenied(int exitCode, string stderr)
+        {
+            if (exitCode == 4) return true; // useradd/groupadd permission denied
+            return stderr.Contains("Permission denied", StringComparison.OrdinalIgnoreCase)
+                || stderr.Contains("Operation not permitted", StringComparison.OrdinalIgnoreCase);
+        }
+
         // ------------------------------------------------------------------ //
         //  User read operations — P/Invoke libc                              //
         // ------------------------------------------------------------------ //

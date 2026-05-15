@@ -23,6 +23,13 @@ namespace Microsoft.PowerShell.Commands
             var (exit, _, stderr) = AccountHelpers.Run("groupadd", Name);
             if (exit != 0)
             {
+                if (AccountHelpers.IsPermissionDenied(exit, stderr))
+                {
+                    WriteError(new ErrorRecord(
+                        new InvalidOperationException("New-LocalGroup requires root privileges."),
+                        "ElevationRequired", ErrorCategory.PermissionDenied, Name));
+                    return;
+                }
                 WriteError(new ErrorRecord(
                     new InvalidOperationException($"groupadd failed (exit {exit}): {stderr.Trim()}"),
                     "GroupaddFailed", ErrorCategory.InvalidOperation, Name));

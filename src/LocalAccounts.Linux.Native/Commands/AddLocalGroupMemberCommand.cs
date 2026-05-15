@@ -24,9 +24,18 @@ namespace Microsoft.PowerShell.Commands
 
                 var (exit, _, stderr) = AccountHelpers.Run("usermod", "-aG", Group, m);
                 if (exit != 0)
+                {
+                    if (AccountHelpers.IsPermissionDenied(exit, stderr))
+                    {
+                        WriteError(new ErrorRecord(
+                            new InvalidOperationException("Add-LocalGroupMember requires root privileges."),
+                            "ElevationRequired", ErrorCategory.PermissionDenied, m));
+                        continue;
+                    }
                     WriteError(new ErrorRecord(
                         new InvalidOperationException($"usermod -aG failed (exit {exit}): {stderr.Trim()}"),
                         "UsermodFailed", ErrorCategory.InvalidOperation, m));
+                }
             }
         }
     }

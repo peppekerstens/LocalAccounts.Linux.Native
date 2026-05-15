@@ -25,9 +25,18 @@ namespace Microsoft.PowerShell.Commands
 
                 var (exit, _, stderr) = AccountHelpers.Run("gpasswd", "-d", m, Group);
                 if (exit != 0)
+                {
+                    if (AccountHelpers.IsPermissionDenied(exit, stderr))
+                    {
+                        WriteError(new ErrorRecord(
+                            new InvalidOperationException("Remove-LocalGroupMember requires root privileges."),
+                            "ElevationRequired", ErrorCategory.PermissionDenied, m));
+                        continue;
+                    }
                     WriteError(new ErrorRecord(
                         new InvalidOperationException($"gpasswd -d failed (exit {exit}): {stderr.Trim()}"),
                         "GpasswdFailed", ErrorCategory.InvalidOperation, m));
+                }
             }
         }
     }

@@ -23,6 +23,13 @@ namespace Microsoft.PowerShell.Commands
             var (exit, _, stderr) = AccountHelpers.Run("groupmod", "-n", NewName, Name);
             if (exit != 0)
             {
+                if (AccountHelpers.IsPermissionDenied(exit, stderr))
+                {
+                    WriteError(new ErrorRecord(
+                        new InvalidOperationException("Rename-LocalGroup requires root privileges."),
+                        "ElevationRequired", ErrorCategory.PermissionDenied, Name));
+                    return;
+                }
                 WriteError(new ErrorRecord(
                     new InvalidOperationException($"groupmod -n failed (exit {exit}): {stderr.Trim()}"),
                     "GroupmodFailed", ErrorCategory.InvalidOperation, Name));

@@ -19,9 +19,18 @@ namespace Microsoft.PowerShell.Commands
 
             var (exit, _, stderr) = AccountHelpers.Run("usermod", "-U", Name);
             if (exit != 0)
+            {
+                if (AccountHelpers.IsPermissionDenied(exit, stderr))
+                {
+                    WriteError(new ErrorRecord(
+                        new InvalidOperationException("Enable-LocalUser requires root privileges."),
+                        "ElevationRequired", ErrorCategory.PermissionDenied, Name));
+                    return;
+                }
                 WriteError(new ErrorRecord(
                     new InvalidOperationException($"usermod -U failed (exit {exit}): {stderr.Trim()}"),
                     "UsermodFailed", ErrorCategory.InvalidOperation, Name));
+            }
         }
     }
 }

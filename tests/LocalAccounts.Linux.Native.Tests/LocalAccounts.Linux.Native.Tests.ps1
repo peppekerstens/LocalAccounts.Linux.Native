@@ -2,41 +2,41 @@
 
 BeforeDiscovery {
     $script:onLinux = $IsLinux -eq $true
-    $script:isRoot  = $IsLinux -and (
-                          [System.IO.File]::ReadAllText('/proc/self/status') -match '(?m)^Uid:\s+(\d+)' -and
-                          $Matches[1] -eq '0')
+    $script:isRoot = $IsLinux -and (
+        [System.IO.File]::ReadAllText('/proc/self/status') -match '(?m)^Uid:\s+(\d+)' -and
+        $Matches[1] -eq '0')
 
     $script:allCmdlets = @(
-        'Get-LocalUser','New-LocalUser','Set-LocalUser','Enable-LocalUser','Disable-LocalUser',
-        'Remove-LocalUser','Rename-LocalUser',
-        'Get-LocalGroup','New-LocalGroup','Set-LocalGroup','Remove-LocalGroup','Rename-LocalGroup',
-        'Get-LocalGroupMember','Add-LocalGroupMember','Remove-LocalGroupMember'
+        'Get-LocalUser', 'New-LocalUser', 'Set-LocalUser', 'Enable-LocalUser', 'Disable-LocalUser',
+        'Remove-LocalUser', 'Rename-LocalUser',
+        'Get-LocalGroup', 'New-LocalGroup', 'Set-LocalGroup', 'Remove-LocalGroup', 'Rename-LocalGroup',
+        'Get-LocalGroupMember', 'Add-LocalGroupMember', 'Remove-LocalGroupMember'
     )
 
-    $script:readCmdlets  = @('Get-LocalUser','Get-LocalGroup','Get-LocalGroupMember')
+    $script:readCmdlets = @('Get-LocalUser', 'Get-LocalGroup', 'Get-LocalGroupMember')
     $script:writeCmdlets = $script:allCmdlets | Where-Object { $_ -notin $script:readCmdlets }
 
-    $script:prefix    = 'pla_test_'
+    $script:prefix = 'pla_test_'
     $script:userNames = 1..10 | ForEach-Object { "${script:prefix}u$_" }
-    $script:grpNames  = @("${script:prefix}grpA", "${script:prefix}grpB")
+    $script:grpNames = @("${script:prefix}grpA", "${script:prefix}grpB")
 }
 
 Describe 'Module: LocalAccounts.Linux.Native' {
 
     BeforeAll {
-        $script:prefix    = 'pla_test_'
+        $script:prefix = 'pla_test_'
         $script:userNames = 1..10 | ForEach-Object { "${script:prefix}u$_" }
-        $script:grpNames  = @("${script:prefix}grpA", "${script:prefix}grpB")
+        $script:grpNames = @("${script:prefix}grpA", "${script:prefix}grpB")
 
         $script:testRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path $PSCommandPath -Parent }
         $script:repoRoot = Split-Path (Split-Path $script:testRoot -Parent) -Parent
 
-        $script:dllDebug   = Join-Path $script:repoRoot 'src/LocalAccounts.Linux.Native/bin/Debug/net8.0/LocalAccounts.Linux.Native.dll'
+        $script:dllDebug = Join-Path $script:repoRoot 'src/LocalAccounts.Linux.Native/bin/Debug/net8.0/LocalAccounts.Linux.Native.dll'
         $script:dllRelease = Join-Path $script:repoRoot 'src/LocalAccounts.Linux.Native/bin/Release/net8.0/LocalAccounts.Linux.Native.dll'
 
         $script:dllPath = if (Test-Path $script:dllRelease) { $script:dllRelease }
-                          elseif (Test-Path $script:dllDebug) { $script:dllDebug }
-                          else { $null }
+        elseif (Test-Path $script:dllDebug) { $script:dllDebug }
+        else { $null }
 
         if ($IsLinux -and $script:dllPath) {
             Import-Module $script:dllPath -Force -ErrorAction Stop
@@ -214,6 +214,111 @@ Describe 'Module: LocalAccounts.Linux.Native' {
     }
 
     # ------------------------------------------------------------------ #
+    #  Elevation errors                                                    #
+    # ------------------------------------------------------------------ #
+
+    Context 'Elevation errors' -Skip:$script:isRoot {
+        It 'New-LocalUser writes a meaningful error when not root' {
+            $err = @()
+            New-LocalUser -Name 'testuser' -NoPassword -ErrorVariable err -ErrorAction SilentlyContinue
+            $err.Count | Should -BeGreaterThan 0
+            $err[0].Exception.Message | Should -Be 'New-LocalUser requires root privileges.'
+            $err[0].FullyQualifiedErrorId | Should -Be 'ElevationRequired,Microsoft.PowerShell.Commands.NewLocalUserCommand'
+            $err[0].CategoryInfo.Category | Should -Be 'PermissionDenied'
+        }
+
+        It 'Remove-LocalUser writes a meaningful error when not root' {
+            $err = @()
+            Remove-LocalUser -Name 'testuser' -ErrorVariable err -ErrorAction SilentlyContinue
+            $err.Count | Should -BeGreaterThan 0
+            $err[0].Exception.Message | Should -Be 'Remove-LocalUser requires root privileges.'
+            $err[0].FullyQualifiedErrorId | Should -Be 'ElevationRequired,Microsoft.PowerShell.Commands.RemoveLocalUserCommand'
+            $err[0].CategoryInfo.Category | Should -Be 'PermissionDenied'
+        }
+
+        It 'Set-LocalUser writes a meaningful error when not root' {
+            $err = @()
+            Set-LocalUser -Name 'root' -Description 'test' -ErrorVariable err -ErrorAction SilentlyContinue
+            $err.Count | Should -BeGreaterThan 0
+            $err[0].Exception.Message | Should -Be 'Set-LocalUser requires root privileges.'
+            $err[0].FullyQualifiedErrorId | Should -Be 'ElevationRequired,Microsoft.PowerShell.Commands.SetLocalUserCommand'
+            $err[0].CategoryInfo.Category | Should -Be 'PermissionDenied'
+        }
+
+        It 'Enable-LocalUser writes a meaningful error when not root' {
+            $err = @()
+            Enable-LocalUser -Name 'root' -ErrorVariable err -ErrorAction SilentlyContinue
+            $err.Count | Should -BeGreaterThan 0
+            $err[0].Exception.Message | Should -Be 'Enable-LocalUser requires root privileges.'
+            $err[0].FullyQualifiedErrorId | Should -Be 'ElevationRequired,Microsoft.PowerShell.Commands.EnableLocalUserCommand'
+            $err[0].CategoryInfo.Category | Should -Be 'PermissionDenied'
+        }
+
+        It 'Disable-LocalUser writes a meaningful error when not root' {
+            $err = @()
+            Disable-LocalUser -Name 'root' -ErrorVariable err -ErrorAction SilentlyContinue
+            $err.Count | Should -BeGreaterThan 0
+            $err[0].Exception.Message | Should -Be 'Disable-LocalUser requires root privileges.'
+            $err[0].FullyQualifiedErrorId | Should -Be 'ElevationRequired,Microsoft.PowerShell.Commands.DisableLocalUserCommand'
+            $err[0].CategoryInfo.Category | Should -Be 'PermissionDenied'
+        }
+
+        It 'Rename-LocalUser writes a meaningful error when not root' {
+            $err = @()
+            Rename-LocalUser -Name 'root' -NewName 'root2' -ErrorVariable err -ErrorAction SilentlyContinue
+            $err.Count | Should -BeGreaterThan 0
+            $err[0].Exception.Message | Should -Be 'Rename-LocalUser requires root privileges.'
+            $err[0].FullyQualifiedErrorId | Should -Be 'ElevationRequired,Microsoft.PowerShell.Commands.RenameLocalUserCommand'
+            $err[0].CategoryInfo.Category | Should -Be 'PermissionDenied'
+        }
+
+        It 'New-LocalGroup writes a meaningful error when not root' {
+            $err = @()
+            New-LocalGroup -Name 'testgroup' -ErrorVariable err -ErrorAction SilentlyContinue
+            $err.Count | Should -BeGreaterThan 0
+            $err[0].Exception.Message | Should -Be 'New-LocalGroup requires root privileges.'
+            $err[0].FullyQualifiedErrorId | Should -Be 'ElevationRequired,Microsoft.PowerShell.Commands.NewLocalGroupCommand'
+            $err[0].CategoryInfo.Category | Should -Be 'PermissionDenied'
+        }
+
+        It 'Remove-LocalGroup writes a meaningful error when not root' {
+            $err = @()
+            Remove-LocalGroup -Name 'testgroup' -ErrorVariable err -ErrorAction SilentlyContinue
+            $err.Count | Should -BeGreaterThan 0
+            $err[0].Exception.Message | Should -Be 'Remove-LocalGroup requires root privileges.'
+            $err[0].FullyQualifiedErrorId | Should -Be 'ElevationRequired,Microsoft.PowerShell.Commands.RemoveLocalGroupCommand'
+            $err[0].CategoryInfo.Category | Should -Be 'PermissionDenied'
+        }
+
+        It 'Rename-LocalGroup writes a meaningful error when not root' {
+            $err = @()
+            Rename-LocalGroup -Name 'root' -NewName 'root2' -ErrorVariable err -ErrorAction SilentlyContinue
+            $err.Count | Should -BeGreaterThan 0
+            $err[0].Exception.Message | Should -Be 'Rename-LocalGroup requires root privileges.'
+            $err[0].FullyQualifiedErrorId | Should -Be 'ElevationRequired,Microsoft.PowerShell.Commands.RenameLocalGroupCommand'
+            $err[0].CategoryInfo.Category | Should -Be 'PermissionDenied'
+        }
+
+        It 'Add-LocalGroupMember writes a meaningful error when not root' {
+            $err = @()
+            Add-LocalGroupMember -Group 'root' -Member 'root' -ErrorVariable err -ErrorAction SilentlyContinue
+            $err.Count | Should -BeGreaterThan 0
+            $err[0].Exception.Message | Should -Be 'Add-LocalGroupMember requires root privileges.'
+            $err[0].FullyQualifiedErrorId | Should -Be 'ElevationRequired,Microsoft.PowerShell.Commands.AddLocalGroupMemberCommand'
+            $err[0].CategoryInfo.Category | Should -Be 'PermissionDenied'
+        }
+
+        It 'Remove-LocalGroupMember writes a meaningful error when not root' {
+            $err = @()
+            Remove-LocalGroupMember -Group 'root' -Member 'root' -ErrorVariable err -ErrorAction SilentlyContinue
+            $err.Count | Should -BeGreaterThan 0
+            $err[0].Exception.Message | Should -Be 'Remove-LocalGroupMember requires root privileges.'
+            $err[0].FullyQualifiedErrorId | Should -Be 'ElevationRequired,Microsoft.PowerShell.Commands.RemoveLocalGroupMemberCommand'
+            $err[0].CategoryInfo.Category | Should -Be 'PermissionDenied'
+        }
+    }
+
+    # ------------------------------------------------------------------ #
     #  Integration: 10 users                                              #
     # ------------------------------------------------------------------ #
 
@@ -299,7 +404,7 @@ Describe 'Module: LocalAccounts.Linux.Native' {
         }
 
         It 'removes 3 users (u5, u6, u7)' {
-            foreach ($n in @("${script:prefix}u5","${script:prefix}u6","${script:prefix}u7")) {
+            foreach ($n in @("${script:prefix}u5", "${script:prefix}u6", "${script:prefix}u7")) {
                 Remove-LocalUser -Name $n -RemoveHome -Confirm:$false
                 $script:createdUsers.Remove($n) | Out-Null
             }
@@ -333,7 +438,7 @@ Describe 'Module: LocalAccounts.Linux.Native' {
                     $script:createdGroups.Add($name)
                 }
             }
-            $script:grpUsers = @("${script:prefix}gmu1","${script:prefix}gmu2")
+            $script:grpUsers = @("${script:prefix}gmu1", "${script:prefix}gmu2")
             foreach ($u in $script:grpUsers) {
                 New-LocalUser -Name $u -NoPassword -Confirm:$false
             }
@@ -425,7 +530,7 @@ Describe 'Module: LocalAccounts.Linux.Native' {
     Context 'Integration - end-to-end lifecycle' -Skip:(-not $script:isRoot) {
 
         BeforeAll {
-            $script:e2eUser  = "${script:prefix}e2e"
+            $script:e2eUser = "${script:prefix}e2e"
             $script:e2eGroup = "${script:prefix}e2egrp"
             New-LocalUser  -Name $script:e2eUser  -FullName 'E2E User' -NoPassword -Confirm:$false
             New-LocalGroup -Name $script:e2eGroup -Confirm:$false
@@ -488,7 +593,7 @@ Describe 'Module: LocalAccounts.Linux.Native' {
     Context 'Scenario - service account provisioning' -Skip:(-not $script:isRoot) {
 
         BeforeAll {
-            $script:svcUser  = "${script:prefix}svc"
+            $script:svcUser = "${script:prefix}svc"
             $script:svcGroup = "${script:prefix}svcgrp"
             # Create a system-style group first
             New-LocalGroup -Name $script:svcGroup -Confirm:$false
@@ -553,8 +658,8 @@ Describe 'Module: LocalAccounts.Linux.Native' {
     Context 'Scenario - operator group bulk membership' -Skip:(-not $script:isRoot) {
 
         BeforeAll {
-            $script:opGroup   = "${script:prefix}operators"
-            $script:opMembers = @("${script:prefix}op1","${script:prefix}op2","${script:prefix}op3")
+            $script:opGroup = "${script:prefix}operators"
+            $script:opMembers = @("${script:prefix}op1", "${script:prefix}op2", "${script:prefix}op3")
             New-LocalGroup -Name $script:opGroup -Confirm:$false
             foreach ($u in $script:opMembers) {
                 New-LocalUser -Name $u -NoPassword -Confirm:$false

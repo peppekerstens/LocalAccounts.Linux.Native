@@ -24,9 +24,18 @@ namespace Microsoft.PowerShell.Commands
             var args = RemoveHome ? new[] { "-r", Name } : new[] { Name };
             var (exit, _, stderr) = AccountHelpers.Run("userdel", args);
             if (exit != 0)
+            {
+                if (AccountHelpers.IsPermissionDenied(exit, stderr))
+                {
+                    WriteError(new ErrorRecord(
+                        new InvalidOperationException("Remove-LocalUser requires root privileges."),
+                        "ElevationRequired", ErrorCategory.PermissionDenied, Name));
+                    return;
+                }
                 WriteError(new ErrorRecord(
                     new InvalidOperationException($"userdel failed (exit {exit}): {stderr.Trim()}"),
                     "UserdelFailed", ErrorCategory.InvalidOperation, Name));
+            }
         }
     }
 }

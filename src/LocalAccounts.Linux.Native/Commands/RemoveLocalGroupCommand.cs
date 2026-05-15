@@ -20,9 +20,18 @@ namespace Microsoft.PowerShell.Commands
 
             var (exit, _, stderr) = AccountHelpers.Run("groupdel", Name);
             if (exit != 0)
+            {
+                if (AccountHelpers.IsPermissionDenied(exit, stderr))
+                {
+                    WriteError(new ErrorRecord(
+                        new InvalidOperationException("Remove-LocalGroup requires root privileges."),
+                        "ElevationRequired", ErrorCategory.PermissionDenied, Name));
+                    return;
+                }
                 WriteError(new ErrorRecord(
                     new InvalidOperationException($"groupdel failed (exit {exit}): {stderr.Trim()}"),
                     "GroupdelFailed", ErrorCategory.InvalidOperation, Name));
+            }
         }
     }
 }
