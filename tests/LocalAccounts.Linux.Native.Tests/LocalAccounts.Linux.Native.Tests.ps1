@@ -217,7 +217,7 @@ Describe 'Module: LocalAccounts.Linux.Native' {
     #  Elevation errors                                                    #
     # ------------------------------------------------------------------ #
 
-    Context 'Elevation errors' -Skip:$script:isRoot {
+    Context 'Elevation errors' -Skip:($script:isRoot -or -not $script:onLinux) {
         It 'New-LocalUser writes a meaningful error when not root' {
             $err = @()
             New-LocalUser -Name 'testuser' -NoPassword -ErrorVariable err -ErrorAction SilentlyContinue
