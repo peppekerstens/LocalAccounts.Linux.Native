@@ -194,9 +194,8 @@ namespace Microsoft.PowerShell.Commands
                 FullName               = fullName,
                 Description            = gecos,
                 Enabled                = enabled,
-                SID                    = null,
                 ObjectClass            = "User",
-                PrincipalSource        = "Local",
+                PrincipalSource        = PrincipalSource.Local,
                 PasswordRequired       = passwordRequired,
                 UserMayChangePassword  = true,
                 PasswordExpires        = passwordExpires,
@@ -270,9 +269,8 @@ namespace Microsoft.PowerShell.Commands
             {
                 Name            = name,
                 Description     = string.Empty,
-                SID             = null,
                 ObjectClass     = "Group",
-                PrincipalSource = "Local",
+                PrincipalSource = PrincipalSource.Local,
                 GID             = (int)g.gr_gid,
             };
         }
@@ -339,8 +337,7 @@ namespace Microsoft.PowerShell.Commands
                 {
                     Name            = m,
                     ObjectClass     = "User",
-                    PrincipalSource = "Local",
-                    SID             = null,
+                    PrincipalSource = PrincipalSource.Local,
                 };
         }
 
