@@ -158,6 +158,7 @@ Invoke-Pester -Path tests/LocalAccounts.Linux.Native.Tests/ -Output Detailed
 | 0.1.0 | Initial release. All 15 cmdlets. P/Invoke reads via libc. 116 Pester tests. |
 | 0.2.0 | Test expansion. Service account scenario (nologin shell, lock, remove); operator bulk membership (pipeline disable/enable/remove); account expiry (`Set-LocalUser -AccountExpires/-AccountNeverExpires`); primary-group edge case (`root` in `root` group). 147 tests. |
 | 0.3.0 | GHA all-green. Fixed `$script:isLinux` collision → `$script:onLinux`; `shell: pwsh` in pester.yml; `--privileged` container flag; `BeOfType` null quirk → `Should -Not -Throw`; openSUSE image now includes `gawk`+`findutils`. All 5 distros pass. |
+| 1.0.0 | Rule 9 compliance: `LocalUser`/`LocalGroup` inherit `LocalPrincipal`, `SID` → `SecurityIdentifier?`, `PrincipalSource` → enum. Elevation error translation. Windows pester tests. `STATUS.md` and `AGENTS.md` added. 22-rule audit passed. |
 
 ---
 
