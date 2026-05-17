@@ -40,6 +40,8 @@
 |---|---|---|
 | `Remove-LocalUser`/`Remove-LocalGroup` return "user/group does not exist" on nonexistent targets instead of elevation error | ℹ️ Expected | Can't test removal elevation without root-created target |
 
+**Tracked on GitHub:** [Issues #1–#7](https://github.com/peppekerstens/LocalAccounts.Linux.Native/issues) (3 MUST, 4 SHOULD from code audit)
+
 ## Next Steps
 
 1. Continue upstream preparation — type alignment complete for this module
