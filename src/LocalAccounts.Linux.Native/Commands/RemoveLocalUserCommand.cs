@@ -3,8 +3,7 @@
 
 using System.Management.Automation;
 
-namespace Microsoft.PowerShell.Commands
-{
+namespace Microsoft.PowerShell.Commands;
     /// <summary>Removes a local user account from a Linux system.</summary>
     [Cmdlet(VerbsCommon.Remove, "LocalUser", SupportsShouldProcess = true,
             ConfirmImpact = ConfirmImpact.High)]
@@ -38,4 +37,3 @@ namespace Microsoft.PowerShell.Commands
             }
         }
     }
-}

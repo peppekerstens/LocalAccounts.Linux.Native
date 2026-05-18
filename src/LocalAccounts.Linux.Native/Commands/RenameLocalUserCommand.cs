@@ -3,8 +3,7 @@
 
 using System.Management.Automation;
 
-namespace Microsoft.PowerShell.Commands
-{
+namespace Microsoft.PowerShell.Commands;
     /// <summary>Renames a local user account on a Linux system.</summary>
     [Cmdlet(VerbsCommon.Rename, "LocalUser", SupportsShouldProcess = true)]
     [OutputType(typeof(LocalUser))]
@@ -47,4 +46,3 @@ namespace Microsoft.PowerShell.Commands
             if (user is not null) WriteObject(user);
         }
     }
-}

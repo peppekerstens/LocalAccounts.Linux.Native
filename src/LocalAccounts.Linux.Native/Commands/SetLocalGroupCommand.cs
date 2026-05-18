@@ -3,8 +3,7 @@
 
 using System.Management.Automation;
 
-namespace Microsoft.PowerShell.Commands
-{
+namespace Microsoft.PowerShell.Commands;
     /// <summary>Modifies a local group on a Linux system.</summary>
     [Cmdlet(VerbsCommon.Set, "LocalGroup", SupportsShouldProcess = true)]
     public sealed class SetLocalGroupCommand : PSCmdlet
@@ -33,4 +32,3 @@ namespace Microsoft.PowerShell.Commands
                 WriteWarning("Set-LocalGroup: Linux groups do not support a description field. The Description parameter has no effect.");
         }
     }
-}

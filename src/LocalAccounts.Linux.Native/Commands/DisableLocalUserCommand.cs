@@ -3,8 +3,7 @@
 
 using System.Management.Automation;
 
-namespace Microsoft.PowerShell.Commands
-{
+namespace Microsoft.PowerShell.Commands;
     /// <summary>Disables a local user account on a Linux system.</summary>
     [Cmdlet(VerbsLifecycle.Disable, "LocalUser", SupportsShouldProcess = true)]
     public sealed class DisableLocalUserCommand : PSCmdlet
@@ -33,4 +32,3 @@ namespace Microsoft.PowerShell.Commands
             }
         }
     }
-}

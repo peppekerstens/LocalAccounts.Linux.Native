@@ -3,8 +3,7 @@
 
 using System.Management.Automation;
 
-namespace Microsoft.PowerShell.Commands
-{
+namespace Microsoft.PowerShell.Commands;
     /// <summary>Creates a new local user account on a Linux system.</summary>
     [Cmdlet(VerbsCommon.New, "LocalUser", DefaultParameterSetName = "Password",
             SupportsShouldProcess = true)]
@@ -88,4 +87,3 @@ namespace Microsoft.PowerShell.Commands
             if (user is not null) WriteObject(user);
         }
     }
-}

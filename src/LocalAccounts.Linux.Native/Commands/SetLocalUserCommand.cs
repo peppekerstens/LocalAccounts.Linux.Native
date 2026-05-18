@@ -3,8 +3,7 @@
 
 using System.Management.Automation;
 
-namespace Microsoft.PowerShell.Commands
-{
+namespace Microsoft.PowerShell.Commands;
     /// <summary>Modifies a local user account on a Linux system.</summary>
     [Cmdlet(VerbsCommon.Set, "LocalUser", SupportsShouldProcess = true)]
     public sealed class SetLocalUserCommand : PSCmdlet
@@ -71,4 +70,3 @@ namespace Microsoft.PowerShell.Commands
                 AccountHelpers.Run("chage", "-M", "99999", Name);
         }
     }
-}

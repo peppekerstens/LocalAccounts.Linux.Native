@@ -3,8 +3,7 @@
 
 using System.Management.Automation;
 
-namespace Microsoft.PowerShell.Commands
-{
+namespace Microsoft.PowerShell.Commands;
     /// <summary>Renames a local group on a Linux system.</summary>
     [Cmdlet(VerbsCommon.Rename, "LocalGroup", SupportsShouldProcess = true)]
     [OutputType(typeof(LocalGroup))]
@@ -40,4 +39,3 @@ namespace Microsoft.PowerShell.Commands
             if (group is not null) WriteObject(group);
         }
     }
-}

@@ -3,8 +3,7 @@
 
 using System.Management.Automation;
 
-namespace Microsoft.PowerShell.Commands
-{
+namespace Microsoft.PowerShell.Commands;
     /// <summary>Enables a local user account on a Linux system.</summary>
     [Cmdlet(VerbsLifecycle.Enable, "LocalUser", SupportsShouldProcess = true)]
     public sealed class EnableLocalUserCommand : PSCmdlet
@@ -33,4 +32,3 @@ namespace Microsoft.PowerShell.Commands
             }
         }
     }
-}

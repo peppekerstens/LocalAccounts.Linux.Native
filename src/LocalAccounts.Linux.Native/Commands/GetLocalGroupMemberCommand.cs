@@ -3,8 +3,7 @@
 
 using System.Management.Automation;
 
-namespace Microsoft.PowerShell.Commands
-{
+namespace Microsoft.PowerShell.Commands;
     /// <summary>Gets members of a local group on a Linux system.</summary>
     [Cmdlet(VerbsCommon.Get, "LocalGroupMember")]
     [OutputType(typeof(LocalPrincipal))]
@@ -29,4 +28,3 @@ namespace Microsoft.PowerShell.Commands
                 WriteObject(member);
         }
     }
-}

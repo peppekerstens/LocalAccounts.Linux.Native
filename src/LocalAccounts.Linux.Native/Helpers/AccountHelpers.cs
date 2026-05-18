@@ -4,8 +4,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-namespace Microsoft.PowerShell.Commands
-{
+namespace Microsoft.PowerShell.Commands;
     /// <summary>
     /// Helpers for LocalAccounts cmdlets on Linux.
     ///
@@ -351,4 +350,3 @@ namespace Microsoft.PowerShell.Commands
             RunWithStdin($"{username}:{plain}", "chpasswd");
         }
     }
-}

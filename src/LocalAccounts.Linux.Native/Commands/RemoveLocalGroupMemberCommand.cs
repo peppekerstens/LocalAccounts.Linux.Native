@@ -3,8 +3,7 @@
 
 using System.Management.Automation;
 
-namespace Microsoft.PowerShell.Commands
-{
+namespace Microsoft.PowerShell.Commands;
     /// <summary>Removes a user from a local group on a Linux system.</summary>
     [Cmdlet(VerbsCommon.Remove, "LocalGroupMember", SupportsShouldProcess = true,
             ConfirmImpact = ConfirmImpact.Medium)]
@@ -40,4 +39,3 @@ namespace Microsoft.PowerShell.Commands
             }
         }
     }
-}

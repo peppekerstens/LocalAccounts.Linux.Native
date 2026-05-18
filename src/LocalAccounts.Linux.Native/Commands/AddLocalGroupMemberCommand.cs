@@ -3,8 +3,7 @@
 
 using System.Management.Automation;
 
-namespace Microsoft.PowerShell.Commands
-{
+namespace Microsoft.PowerShell.Commands;
     /// <summary>Adds a user to a local group on a Linux system.</summary>
     [Cmdlet(VerbsCommon.Add, "LocalGroupMember", SupportsShouldProcess = true)]
     public sealed class AddLocalGroupMemberCommand : PSCmdlet
@@ -39,4 +38,3 @@ namespace Microsoft.PowerShell.Commands
             }
         }
     }
-}

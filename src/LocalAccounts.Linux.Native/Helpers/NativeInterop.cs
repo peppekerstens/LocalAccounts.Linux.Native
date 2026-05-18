@@ -3,8 +3,7 @@
 
 using System.Runtime.InteropServices;
 
-namespace Microsoft.PowerShell.Commands
-{
+namespace Microsoft.PowerShell.Commands;
     /// <summary>
     /// P/Invoke bindings for libc user/group/shadow database functions.
     ///
@@ -201,4 +200,3 @@ namespace Microsoft.PowerShell.Commands
         internal static DateTime? ShadowDaysToDate(long days) =>
             days <= 0 ? null : s_epoch.AddDays(days).ToLocalTime();
     }
-}

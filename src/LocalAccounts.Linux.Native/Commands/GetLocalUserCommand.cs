@@ -4,8 +4,7 @@
 using System.Management.Automation;
 using System.Text.RegularExpressions;
 
-namespace Microsoft.PowerShell.Commands
-{
+namespace Microsoft.PowerShell.Commands;
     /// <summary>Gets local user accounts on a Linux system.</summary>
     [Cmdlet(VerbsCommon.Get, "LocalUser", DefaultParameterSetName = "Default")]
     [OutputType(typeof(LocalUser))]
@@ -37,4 +36,3 @@ namespace Microsoft.PowerShell.Commands
             }
         }
     }
-}

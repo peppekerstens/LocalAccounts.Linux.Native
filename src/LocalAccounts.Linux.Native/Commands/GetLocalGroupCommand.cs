@@ -3,8 +3,7 @@
 
 using System.Management.Automation;
 
-namespace Microsoft.PowerShell.Commands
-{
+namespace Microsoft.PowerShell.Commands;
     /// <summary>Gets local groups on a Linux system.</summary>
     [Cmdlet(VerbsCommon.Get, "LocalGroup", DefaultParameterSetName = "Default")]
     [OutputType(typeof(LocalGroup))]
@@ -34,4 +33,3 @@ namespace Microsoft.PowerShell.Commands
             }
         }
     }
-}
